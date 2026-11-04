@@ -51,6 +51,12 @@ Shader "ShadowLab/Receiver"
                 float4 clip = mul(_SL_LightVP, float4(positionWS, 1));
                 if (clip.w <= 0) return 1;
                 float2 uv = clip.xy / clip.w * .5 + .5;
+                // clip comes from the actual GPU render-target projection.
+                // On top-origin raster APIs, NDC +Y maps to texture row 0.
+                // Do not use the display camera's _ProjectionParams here.
+                #if UNITY_UV_STARTS_AT_TOP
+                    uv.y = 1.0 - uv.y;
+                #endif
                 float d = dot(positionWS - _SL_LightPosition, _SL_LightForward) / _SL_Far;
                 if (any(uv < 0) || any(uv > 1) || d < _SL_Bias.z || d > 1) return 1;
                 // Bias in normalized LINEAR light depth, not hardware depth.

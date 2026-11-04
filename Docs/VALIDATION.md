@@ -38,3 +38,7 @@ Repeat at 512 and 2048. Preserve raw captures and settings. Do not interpret sha
 ## Mac observation and v0.3 follow-up
 
 The user's v0.2 screenshot confirms Unity 6.3 LTS 6000.3.24f1, Metal, 15 shadow draw submissions, and a uniform grayscale map with absent cast shadows. This is a failed rendering check. v0.3 removes the explicit reversed-Z depth clear and adds on-demand GPU min/max and coverage readback. Compilation and rendering of v0.3 remain pending. A written-pixel ratio is based on linear depth < 0.9999 and is a diagnostic heuristic, not a full correctness test.
+
+## Receiver UV correction
+
+After v0.3 the user's video shows cast shadows, but also incorrect large diagonal dark regions and sphere-surface artifacts. The receiver converted GPU clip XY to [0,1] without accounting for a top-origin raster API. The corrected receiver flips sample V under UNITY_UV_STARTS_AT_TOP. This is specific to this module's GPU-projection path; do not copy the condition blindly into unrelated rendering paths. Visual verification is still pending. Check ground shadows against light position with Hard mode and frozen animation before judging PCF. Thin poles may require a closer view / higher map resolution, but missing shadows must not be attributed to resolution until coordinate correctness is verified.
