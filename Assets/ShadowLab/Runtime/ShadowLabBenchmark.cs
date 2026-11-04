@@ -16,7 +16,7 @@ namespace ShadowLab
         public bool Running { get; private set; }
         public string Status { get; private set; } = "No capture yet";
         public string LastFolder { get; private set; }
-        readonly FrameTiming[] latest = new FrameTiming[1];
+        readonly FrameTiming[] latest = new FrameTiming[16];
         readonly List<FrameTiming> samples = new List<FrameTiming>();
         readonly HashSet<ulong> seen = new HashSet<ulong>();
         ShadowLabController owner;
@@ -52,6 +52,7 @@ namespace ShadowLab
 
         public void Begin(ShadowLabController controller)
         {
+            LastFolder = null;
             if (Running || !controller || !controller.displayCamera || !controller.lightRig) return;
             if (!FrameTimingManager.IsFeatureEnabled()) {
                 Status = "Enable Frame Timing Stats in Player Settings, then restart Play.";
@@ -68,43 +69,55 @@ namespace ShadowLab
         {
             samples.Clear(); seen.Clear();
             try {
-                // Drain delayed data and warm the selected shader / fixed pose.
+                // Drain timing history from the warm-up period.
+                ulong warmCutoff = 0;
                 double warmUntil = Time.realtimeSinceStartupAsDouble + 3;
                 while (Time.realtimeSinceStartupAsDouble < warmUntil) {
                     Status = "Warming up (3 seconds)...";
                     FrameTimingManager.CaptureFrameTimings();
                     yield return null;
-                    if (FrameTimingManager.GetLatestTimings(1, latest) > 0)
-                        seen.Add(latest[0].frameStartTimestamp);
+                    uint count = FrameTimingManager.GetLatestTimings((uint)latest.Length, latest);
+                    for (int i = 0; i < (int)count; i++)
+                        if (latest[i].frameStartTimestamp > warmCutoff)
+                            warmCutoff = latest[i].frameStartTimestamp;
                 }
                 string before = JsonUtility.ToJson(Snapshot(owner), true);
                 double deadline = Time.realtimeSinceStartupAsDouble + 30;
-                int invalid = 0;
+                var observed = new HashSet<ulong>();
                 while (samples.Count < 300 && Time.realtimeSinceStartupAsDouble < deadline) {
                     FrameTimingManager.CaptureFrameTimings();
                     yield return null;
-                    if (FrameTimingManager.GetLatestTimings(1, latest) == 0) continue;
-                    FrameTiming timing = latest[0];
-                    if (timing.frameStartTimestamp == 0 || !seen.Add(timing.frameStartTimestamp)) continue;
-                    if (timing.gpuFrameTime <= 0 || double.IsNaN(timing.gpuFrameTime) ||
-                        double.IsInfinity(timing.gpuFrameTime)) { invalid++; continue; }
-                    samples.Add(timing);
-                    Status = $"Total GPU capture: {samples.Count}/300";
-                }
-                if (samples.Count != 300) {
-                    Status = $"No complete result: {samples.Count}/300 valid GPU samples, {invalid} invalid. No FPS substitution.";
-                    yield break;
+                    uint count = FrameTimingManager.GetLatestTimings((uint)latest.Length, latest);
+                    // Unity returns newest first. Process the whole returned window,
+                    // oldest first, so completed older GPU results are not skipped.
+                    for (int i = (int)count - 1; i >= 0 && samples.Count < 300; i--) {
+                        FrameTiming timing = latest[i];
+                        ulong stamp = timing.frameStartTimestamp;
+                        if (stamp == 0 || stamp <= warmCutoff || seen.Contains(stamp)) continue;
+                        observed.Add(stamp);
+                        if (timing.gpuFrameTime <= 0 || double.IsNaN(timing.gpuFrameTime) ||
+                            double.IsInfinity(timing.gpuFrameTime)) continue;
+                        // Only retire a timestamp once its GPU timing is VALID.
+                        // A zero observation may be returned with completed data later.
+                        seen.Add(stamp);
+                        samples.Add(timing);
+                    }
+                    Status = $"GPU samples: {samples.Count}/300 | observed frames {observed.Count}";
                 }
                 if (before != JsonUtility.ToJson(Snapshot(owner), true)) {
                     Status = "Conditions changed during capture; discarded. Keep Game view / Inspector fixed.";
                     yield break;
                 }
-                Export(before);
+                if (samples.Count == 0) {
+                    Status = "No valid GPU timings. Test a standalone macOS Player; no FPS fallback.";
+                    yield break;
+                }
+                Export(before, observed.Count);
             }
             finally { Restore(); }
         }
 
-        void Export(string conditions)
+        void Export(string conditions, int observedCount)
         {
             try {
                 string name = DateTime.UtcNow.ToString("yyyyMMdd_HHmmss_fff", CultureInfo.InvariantCulture) +
@@ -121,13 +134,19 @@ namespace ShadowLab
                     gpu.Add(t.gpuFrameTime);
                 }
                 gpu.Sort();
-                double median = (gpu[149] + gpu[150]) * .5;
+                int middle = gpu.Count / 2;
+                double median = gpu.Count % 2 == 0 ?
+                    (gpu[middle - 1] + gpu[middle]) * .5 : gpu[middle];
+                double availability = (double)gpu.Count / Math.Max(gpu.Count, observedCount);
+                bool complete = gpu.Count == 300 && availability >= .95;
                 double p95 = gpu[(int)Math.Ceiling(gpu.Count * .95) - 1];
                 File.WriteAllText(Path.Combine(LastFolder, "samples.csv"), csv.ToString());
                 File.WriteAllText(Path.Combine(LastFolder, "conditions.json"), conditions);
                 File.WriteAllText(Path.Combine(LastFolder, "summary.txt"),
-                    $"FrameTimingManager total-frame GPU timing; not isolated shadows.\nValid samples: 300\nMedian GPU ms: {median.ToString("F6", CultureInfo.InvariantCulture)}\nP95 GPU ms: {p95.ToString("F6", CultureInfo.InvariantCulture)}\nEditor overhead / GPU scheduling may affect results.\n");
-                Status = $"Saved: median {median:F3} ms, P95 {p95:F3} ms (total GPU)";
+                    $"FrameTimingManager total-frame GPU timing; not isolated shadows.\nComplete benchmark: {complete}\nValid samples: {gpu.Count}\nObserved unique frames: {observedCount}\nAvailability: {availability.ToString("P2", CultureInfo.InvariantCulture)}\nInsufficient samples or low availability: diagnostics only, do not use for performance claims.\nMedian of VALID GPU samples ms: {median.ToString("F6", CultureInfo.InvariantCulture)}\nP95 GPU ms: {p95.ToString("F6", CultureInfo.InvariantCulture)}\nEditor overhead / GPU scheduling may affect results.\n");
+                Status = complete ?
+                    $"Saved 300 samples: median {median:F3} ms, P95 {p95:F3} ms (total GPU)" :
+                    $"Saved DIAGNOSTICS: {gpu.Count}/300 samples, {availability:P1} availability. Test a macOS Player.";
                 Debug.Log("ShadowLab benchmark saved: " + LastFolder);
             } catch (Exception ex) {
                 Status = "Could not save benchmark: " + ex.Message;

@@ -39,7 +39,7 @@ The capture restores animation/preview/panel after completion or cancellation. E
 - conditions.json: Unity, GPU, OS, graphics API, Editor/Player, dimensions and rendering parameters.
 - summary.txt: total-GPU median and nearest-rank P95.
 
-If GPU timing is unavailable / zero, the run does not export a complete result. Report unavailable, then use an appropriate platform capture tool. The benchmark labels itself as total-frame timing and makes no isolated-shadow-pass claim. The named ShadowLab.ShadowMap sample covers generation only; PCF/PCSS work runs in the receiver shader.
+If some timings are valid but the target is not reached, raw valid samples are exported as diagnostics. A run is marked complete only with 300 valid samples and at least 95% availability among unique observed frames. This threshold is a conservative project rule, not a Unity guarantee. Low availability can bias the retained sample distribution; do not use diagnostic-only medians as benchmark results. If all GPU timings are unavailable / zero, no sample CSV is exported. Report unavailable, then use an appropriate platform capture tool. The benchmark labels itself as total-frame timing and makes no isolated-shadow-pass claim. The named ShadowLab.ShadowMap sample covers generation only; PCF/PCSS work runs in the receiver shader.
 
 ## Result table (no measurements yet)
 
@@ -62,3 +62,17 @@ Do not report a mode speedup when differences are within run-to-run variability.
 6. If actual validated benchmark results exist, show the measured quality/cost comparison; otherwise say measurement is pending.
 
 For visual captures, hide unrelated windows and use consistent framing. Explain that the project reproduces established shadow algorithms and explores implementation tradeoffs, not a novel shadow algorithm.
+
+## Timing collector follow-up
+
+A user Editor capture obtained 208 valid samples and reported 21298 invalid observations in 30 seconds. The previous collector read only the latest frame and retired its timestamp even when GPU time was invalid. The corrected collector requests up to 16 historical timings, excludes pre-measurement history and deduplicates only accepted valid samples. Partial results retain raw data with explicit diagnostic-only status. The change has not been run on the host; it cannot fix a platform that does not provide GPU timings.
+
+If the Editor still reports sparse or zero results, test a standalone macOS Player before spending time on all four modes:
+
+1. Exit Play and save the generated scene.
+2. Open File > Build Profiles, select a macOS build profile (create one if needed), and switch to it if necessary.
+3. Include the generated ShadowLab scene in Scene List; for this demo use only that scene.
+4. Keep Frame Timing Stats enabled. Use a normal Player build for final measurements; a Development Build can be used for diagnosis, with results labeled accordingly.
+5. Choose Build And Run, saving the .app in a separate Builds folder outside Assets.
+6. In the running app choose the same fixed conditions and record Hard first. Keep the app focused; do not resize while recording.
+7. If valid timing remains sparse, keep diagnostic exports and use Xcode/Metal profiling. Do not extend timeouts or lower quality thresholds merely to obtain publishable-looking numbers.

@@ -81,3 +81,7 @@ Screenshots show PCSS at 1024 and fixed sphere height 2.00 with emitter radii 0.
 ## v0.6 capture tooling
 
 Adds FrameTimingManager collection of 300 unique positive total-GPU samples, raw CSV, condition metadata and median/P95 summary. No render algorithm changes. Capture code has not been compiled/run on the Mac; no timing values have been collected. See BENCHMARK.md. Unity GPU Usage module is not supported on macOS Metal; FrameTimingManager is the documented total-frame path.
+
+## First capture result and collector fix
+
+The user's screenshot reports 208/300 valid GPU samples and 21298 invalid observations within the timeout. No complete performance result is established. The collector now reads a history window and does not retire timestamps on invalid data. Partial valid samples can be exported as diagnostics with availability and completion status. Unity compilation, Editor rerun and macOS Player results after this fix remain pending. Rendering algorithms are unchanged.
