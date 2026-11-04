@@ -2,7 +2,9 @@
 
 ## Current evidence
 
-The initial version compiled and its controls, geometry and lighting ran on the user's Mac (screen recording / screenshot supplied). Cast shadows were missing and the raw RFloat preview appeared uniformly red. Exact Editor / URP versions and the cause are not yet confirmed. v0.2 changes explicit mesh transforms, shadow culling, SRP command ordering and RGB preview. Its rendering remains unverified; checkboxes below describe the acceptance checklist, not completed results.
+User screenshots and recordings show Unity 6.3 LTS 6000.3.24f1 / Metal, generated scene and working controls. v0.3 default depth clear plus receiver UV correction produced recognizable ground shadows from poles, sphere and blocks. Three fixed-scene screenshots show a hard edge versus wider PCF transitions, but 5x5 PCF at 512 / spacing 2.1 produced curved receiver stripes. The preview remained uniform gray. Mac model, macOS and URP package version remain unrecorded.
+
+v0.4 contains receiver-plane correction and a new explicit preview draw. Five CPU mathematical regressions pass, but Unity compilation, Metal visual checks and performance checks for v0.4 are **pending**. Historical screenshots are evidence for previous revisions only.
 
 ## First-run checklist
 
@@ -42,3 +44,15 @@ The user's v0.2 screenshot confirms Unity 6.3 LTS 6000.3.24f1, Metal, 15 shadow 
 ## Receiver UV correction
 
 After v0.3 the user's video shows cast shadows, but also incorrect large diagonal dark regions and sphere-surface artifacts. The receiver converted GPU clip XY to [0,1] without accounting for a top-origin raster API. The corrected receiver flips sample V under UNITY_UV_STARTS_AT_TOP. This is specific to this module's GPU-projection path; do not copy the condition blindly into unrelated rendering paths. Visual verification is still pending. Check ground shadows against light position with Hard mode and frozen animation before judging PCF. Thin poles may require a closer view / higher map resolution, but missing shadows must not be attributed to resolution until coordinate correctness is verified.
+
+## v0.4 acceptance checks
+
+- [ ] Existing scene loads after replacing the three source files; panel says v0.4.
+- [ ] Freeze animation, select 512 / spacing 2.1 / PCF5x5; toggle Receiver-plane depth correction. Ground stripes decrease with correction on.
+- [ ] Sphere, pole, cube and ramp cast shadows remain; correction does not make true blockers disappear.
+- [ ] Repeat at 1024 / 2048 and light poses including grazing slopes; inspect silhouettes and sphere facets for new artifacts.
+- [ ] Hard mode still has distinct edges; corrected PCF widens transitions. Sparse low-resolution sampling artifacts are not mislabeled as PCSS.
+- [ ] Show shadow map displays recognizable silhouettes and depth variation; contrast slider affects preview only.
+- [ ] GPU readback range agrees with empty / populated map interpretation.
+- [ ] Disable preview before timing; compare receiver-plane correction off/on at fixed camera, light, map and filter.
+- [ ] Repeat Play entry/exit and resolution switches with no resource errors.

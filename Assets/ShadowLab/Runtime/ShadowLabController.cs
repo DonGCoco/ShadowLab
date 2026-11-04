@@ -20,11 +20,14 @@ namespace ShadowLab
         public bool animate = true;
         public bool showDepth;
         public bool showPanel = true;
+        public bool receiverPlaneBias = true;
+        [Range(.05f, 1)] public float previewMaxDepth = .6f;
         public float nearPlane = .2f;
         public float farPlane = 25;
         public float fieldOfView = 70;
         RenderTexture map;
         RenderTexture depthPreview;
+        Mesh previewTriangle;
         MaterialPropertyBlock drawProperties;
         int submittedDraws;
         string depthStatistics = "GPU depth range: not sampled";
@@ -34,13 +37,20 @@ namespace ShadowLab
         float elapsed;
         Vector3 movingOrigin;
         bool warned;
-        Rect panel = new Rect(14, 14, 350, 620);
+        Rect panel = new Rect(14, 14, 370, 700);
 
         void OnEnable()
         {
             if (movingObject) movingOrigin = movingObject.position;
             commands = new CommandBuffer { name = "ShadowLab custom shadow map" };
             drawProperties = new MaterialPropertyBlock();
+            previewTriangle = new Mesh { name = "ShadowLab Preview Triangle",
+                hideFlags = HideFlags.HideAndDontSave };
+            previewTriangle.vertices = new[] {
+                new Vector3(-1,-1,0), new Vector3(-1,3,0), new Vector3(3,-1,0)
+            };
+            previewTriangle.triangles = new[] { 0, 1, 2 };
+            previewTriangle.UploadMeshData(true);
             RenderPipelineManager.beginCameraRendering += RenderShadows;
         }
 
@@ -103,6 +113,8 @@ namespace ShadowLab
             // far value instead of manually applying reversed-Z a second time.
             commands.ClearRenderTarget(true, true, Color.white);
             commands.SetGlobalMatrix("_SL_LightVP", vp);
+            commands.SetGlobalMatrix("_SL_LightVPInverse", vp.inverse);
+            commands.SetGlobalFloat("_SL_ReceiverPlane", receiverPlaneBias ? 1f : 0f);
             commands.SetGlobalVector("_SL_LightPosition", lightRig.position);
             commands.SetGlobalVector("_SL_LightForward", lightRig.forward);
             commands.SetGlobalFloat("_SL_Far", farPlane);
@@ -125,8 +137,19 @@ namespace ShadowLab
                     }
                 }
             commands.EndSample("ShadowLab.ShadowMap");
-            if (showDepth && depthMaterial.passCount > 1)
-                commands.Blit(map, depthPreview, depthMaterial, 1);
+            if (showDepth && depthMaterial.passCount > 1 && previewTriangle)
+            {
+                commands.BeginSample("ShadowLab.DepthPreview");
+                commands.SetRenderTarget(depthPreview);
+                commands.SetViewport(new Rect(0, 0, depthPreview.width, depthPreview.height));
+                // Magenta remains visible if the explicit preview pass fails.
+                commands.ClearRenderTarget(false, true, Color.magenta);
+                commands.SetGlobalTexture("_SL_PreviewSource", map);
+                commands.SetGlobalVector("_SL_PreviewRange",
+                    new Vector4(0, Mathf.Max(.05f, previewMaxDepth), 0, 0));
+                commands.DrawMesh(previewTriangle, Matrix4x4.identity, depthMaterial, 0, 1);
+                commands.EndSample("ShadowLab.DepthPreview");
+            }
             commands.SetGlobalTexture("_SL_ShadowMap", map);
             commands.SetGlobalVector("_SL_MapInfo", new Vector4(1f / resolution, 1f / resolution,
                 filterRadius, (int)filter));
@@ -153,10 +176,11 @@ namespace ShadowLab
 
         void DrawPanel(int id)
         {
-            GUILayout.Label("ShadowLab v0.3 | opaque meshes");
+            GUILayout.Label("ShadowLab v0.4 | receiver-plane PCF");
             GUILayout.Label($"Shadow draw submissions: {submittedDraws} | frame {lastSubmissionFrame}");
             filter = (Filter)GUILayout.SelectionGrid((int)filter,
                 new[] { "Hard", "PCF 3x3", "PCF 5x5" }, 3);
+            GUILayout.Label($"Active: {filter} | {resolution}px");
             int selected = resolution <= 512 ? 0 : resolution <= 1024 ? 1 : 2;
             selected = GUILayout.SelectionGrid(selected, new[] { "512", "1024", "2048" }, 3);
             resolution = new[] { 512, 1024, 2048 }[selected];
@@ -167,17 +191,22 @@ namespace ShadowLab
             GUILayout.Label($"PCF radius / texel spacing: {filterRadius:F2}");
             filterRadius = GUILayout.HorizontalSlider(filterRadius, .25f, 4);
             animate = GUILayout.Toggle(animate, "Animate light and floating sphere");
+            receiverPlaneBias = GUILayout.Toggle(receiverPlaneBias, "Receiver-plane depth correction");
             showDepth = GUILayout.Toggle(showDepth, "Show shadow map");
+            if (showDepth) {
+                GUILayout.Label($"Preview max depth: {previewMaxDepth:F2} (display only)");
+                previewMaxDepth = GUILayout.HorizontalSlider(previewMaxDepth, .05f, 1f);
+            }
             GUILayout.Space(8);
             if (GUILayout.Button("Preset: expose shadow acne")) {
-                constantBias = 0; slopeBias = 0; filter = Filter.Hard;
+                constantBias = 0; slopeBias = 0; receiverPlaneBias = false; filter = Filter.Hard;
             }
             if (GUILayout.Button("Preset: excessive bias / detached shadow")) {
                 constantBias = .025f; slopeBias = .02f; filter = Filter.Hard;
             }
             if (GUILayout.Button("Preset: baseline")) {
                 constantBias = .002f; slopeBias = .004f; filterRadius = 1;
-                filter = Filter.PCF3x3; resolution = 1024;
+                filter = Filter.PCF3x3; resolution = 1024; receiverPlaneBias = true;
             }
             GUILayout.Space(8);
             GUI.enabled = !readbackPending && map;
@@ -186,7 +215,7 @@ namespace ShadowLab
             GUILayout.Label(depthStatistics);
             GUILayout.Space(8);
             GUILayout.Label("Frame time / FPS is NOT GPU shadow timing.\nUse Unity Profiler / GPU capture.\nPCSS: planned, not implemented.\nMac visual validation: pending.");
-            GUI.DragWindow(new Rect(0, 0, 330, 22));
+            GUI.DragWindow(new Rect(0, 0, 370, 22));
         }
 
         void ReadDepthRange()
@@ -224,6 +253,10 @@ namespace ShadowLab
         {
             RenderPipelineManager.beginCameraRendering -= RenderShadows;
             commands?.Release(); commands = null;
+            if (previewTriangle) {
+                if (Application.isPlaying) Destroy(previewTriangle); else DestroyImmediate(previewTriangle);
+                previewTriangle = null;
+            }
             Shader.SetGlobalTexture("_SL_ShadowMap", Texture2D.whiteTexture);
             ReleaseMap();
         }

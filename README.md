@@ -2,7 +2,7 @@
 
 A focused real-time shadow-mapping study for Unity URP, written in C# and HLSL.
 
-**Status: v0.2 diagnostic fix. The initial scene compiled and ran on the user's Mac, but cast shadows were missing. This revision changes shadow draw submission, transform handling and preview; it still requires Mac verification. No benchmark results or completed PCSS implementation are claimed.**
+**Status: v0.4 source revision, pending Unity / Metal validation. User recordings show basic cast shadows and PCF switching working after v0.3 + UV correction; wide PCF caused receiver stripes and the old depth preview remained flat. v0.4 addresses these two issues. No GPU benchmark results or PCSS implementation are claimed.**
 
 ## Implemented in source
 
@@ -10,6 +10,7 @@ A focused real-time shadow-mapping study for Unity URP, written in C# and HLSL.
 - Linear light-view depth stored in RFloat; separate hardware depth for visibility.
 - Hard shadows, 3x3 PCF and 5x5 PCF (1 / 9 / 25 depth comparisons).
 - Adjustable constant bias, normal-angle-based bias, filter spacing and map resolution.
+- Optional perspective-correct geometric receiver-plane depth per PCF texel.
 - Runtime controls, light / sphere animation and shadow-map preview.
 - Editor scene builder: ground, contact cube, floating sphere, thin poles, slope and stairs.
 - Named GPU command-buffer sample: `ShadowLab.ShadowMap`.
@@ -45,14 +46,24 @@ PCF averages visibility comparisons; a bigger kernel alone does not model contac
 
 See [validation checklist](Docs/VALIDATION.md), [algorithm notes](Docs/ALGORITHMS.md) and [roadmap](Docs/ROADMAP.md).
 
-## Updating an existing demo to v0.2
+## Update an existing demo to v0.4
 
-Exit Play mode. Replace only `Assets/ShadowLab/Runtime/ShadowLabController.cs` and `Assets/ShadowLab/Shaders/LinearDepth.shader` with the latest versions (preserve existing .meta files). No scene regeneration or material replacement is needed. Wait for compilation, enter Play, pause animation, press Baseline and enable Show shadow map. The panel must say **ShadowLab v0.2**. Record the shadow draw submission count and the grayscale preview. A nonzero count means commands were submitted, not proof of successful GPU rendering.
+Exit Play mode and replace these files, preserving their existing .meta files:
 
-This revision uses explicit per-mesh object matrices, two-sided shadow casting and SRP-context-ordered command execution. Raw single-channel textures appear red in IMGUI; the new preview copies red depth into all RGB channels. White still means empty or far. If it is uniformly white, check the Console and capture the panel plus preview; do not assume PCF settings are the cause.
+- `Assets/ShadowLab/Runtime/ShadowLabController.cs`
+- `Assets/ShadowLab/Shaders/Receiver.shader`
+- `Assets/ShadowLab/Shaders/LinearDepth.shader`
 
-## v0.3: depth clear correction
+No scene regeneration is required. After compilation the panel should say **v0.4**. Press **Baseline** to enable receiver-plane correction. Freeze animation, select **512**, set spacing to **2.1**, and compare **5x5 PCF** with **Receiver-plane depth correction** off / on. Correction should reduce false self-shadow stripes on the ground without erasing real object shadows; this visual acceptance check is still pending.
 
-The shadow pass now uses `ClearRenderTarget(true, true, Color.white)` with the API's default logical far depth. The previous explicit reversed-Z clear override is removed. This is the leading depth-rejection hypothesis, not a verified fix on Metal yet. Update only `Runtime/ShadowLabController.cs` over v0.2; keep its .meta file and the existing scene. The panel should show v0.3.
+Enable **Show shadow map**. The preview uses an explicit clip-space triangle with a dedicated texture binding, rather than legacy Blit. **Preview max depth** changes display contrast only. Magenta means the preview target was cleared but its draw did not complete. An all-white preview can indicate empty / far data; use **Read GPU depth range** to distinguish stored values from a display failure.
 
-If the map remains uniform, press **Read GPU depth range** and report the min/max and written-pixel percentage alongside Console errors. This distinguishes an empty depth map from a preview that merely looks flat. GPU readback is on demand for diagnostics; it is not a benchmark and should not be requested during performance measurement.
+Receiver-plane correction adds shader arithmetic; measure its cost rather than assuming the old 1/9/25 sample counts predict speed. It uses the local geometric triangle plane, with bounded extrapolation near grazing light angles. It is not a complete cure for curvature, silhouettes, sparse PCF sampling, or large footprints.
+
+## CPU geometry checks
+
+```sh
+python3 -m unittest discover -s Tests -v
+```
+
+Five tests verify top/bottom-origin projection, known tilted receiver planes across 512/1024/2048 maps, reproduction of false self-shadow without correction, preservation of a real blocker, and preview-triangle coverage. They do **not** compile Unity shaders or validate Metal rendering.

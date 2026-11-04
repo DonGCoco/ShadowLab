@@ -21,6 +21,8 @@ Shader "ShadowLab/Receiver"
             TEXTURE2D(_SL_ShadowMap);
             SAMPLER(sampler_SL_ShadowMap);
             float4x4 _SL_LightVP;
+            float4x4 _SL_LightVPInverse;
+            float _SL_ReceiverPlane;
             float3 _SL_LightPosition, _SL_LightForward;
             float _SL_Far;
             float4 _SL_MapInfo; // inverse size xy, filter spacing z, mode w
@@ -39,39 +41,78 @@ Shader "ShadowLab/Receiver"
                 output.normalWS = TransformObjectToWorldNormal(input.normalOS);
                 return output;
             }
-            float CompareDepth(float2 uv, float receiverDepth)
+            float2 ShadowUV(float4 clip)
             {
-                if (any(uv < 0) || any(uv > 1)) return 1;
-                float storedDepth = SAMPLE_TEXTURE2D_LOD(_SL_ShadowMap,
-                    sampler_SL_ShadowMap, uv, 0).r;
-                return receiverDepth <= storedDepth ? 1.0 : 0.0;
-            }
-            float Visibility(float3 positionWS, float ndl)
-            {
-                float4 clip = mul(_SL_LightVP, float4(positionWS, 1));
-                if (clip.w <= 0) return 1;
                 float2 uv = clip.xy / clip.w * .5 + .5;
-                // clip comes from the actual GPU render-target projection.
-                // On top-origin raster APIs, NDC +Y maps to texture row 0.
-                // Do not use the display camera's _ProjectionParams here.
                 #if UNITY_UV_STARTS_AT_TOP
                     uv.y = 1.0 - uv.y;
                 #endif
+                return uv;
+            }
+
+            // Use the center of the actual point-sampled texel, not just the
+            // requested offset. They differ at low resolution / wide spacing.
+            float CompareReceiverPlane(float2 requestedUV, float centerDepth,
+                float3 receiverPosition, float3 planeNormal, float bias)
+            {
+                if (any(requestedUV < 0) || any(requestedUV >= 1)) return 1;
+                float2 texelUV = (floor(requestedUV / _SL_MapInfo.xy) + .5) * _SL_MapInfo.xy;
+                float referenceDepth = centerDepth;
+                if (_SL_ReceiverPlane > .5)
+                {
+                    float2 ndc = texelUV * 2 - 1;
+                    #if UNITY_UV_STARTS_AT_TOP
+                        ndc.y = -ndc.y;
+                    #endif
+                    // Any interior clip Z reconstructs a point on this light ray.
+                    float4 pointH = mul(_SL_LightVPInverse, float4(ndc, .5, 1));
+                    float3 ray = pointH.xyz / pointH.w - _SL_LightPosition;
+                    float denominator = dot(planeNormal, ray);
+                    float numerator = dot(planeNormal, receiverPosition - _SL_LightPosition);
+                    if (abs(denominator) > 1e-6)
+                    {
+                        float t = numerator / denominator;
+                        float planeDepth = dot(t * ray, _SL_LightForward) / _SL_Far;
+                        // Near-grazing rays may intersect the extended plane far
+                        // away. Bound extrapolation; fall back to ordinary bias.
+                        if (t > 0 && planeDepth > 0 && planeDepth < 1 &&
+                            abs(planeDepth - centerDepth) < .05)
+                            referenceDepth = planeDepth;
+                    }
+                }
+                float storedDepth = SAMPLE_TEXTURE2D_LOD(_SL_ShadowMap,
+                    sampler_SL_ShadowMap, texelUV, 0).r;
+                return referenceDepth - bias <= storedDepth ? 1.0 : 0.0;
+            }
+
+            float Visibility(float3 positionWS, float ndl, float3 planeNormal)
+            {
+                float4 clip = mul(_SL_LightVP, float4(positionWS, 1));
+                if (clip.w <= 0) return 1;
+                float2 uv = ShadowUV(clip);
                 float d = dot(positionWS - _SL_LightPosition, _SL_LightForward) / _SL_Far;
-                if (any(uv < 0) || any(uv > 1) || d < _SL_Bias.z || d > 1) return 1;
-                // Bias in normalized LINEAR light depth, not hardware depth.
-                d -= _SL_Bias.x + _SL_Bias.y * (1 - ndl);
-                int radius = (int)_SL_MapInfo.w; // 0=1 tap; 1=9; 2=25
+                if (any(uv < 0) || any(uv >= 1) || d < _SL_Bias.z || d > 1) return 1;
+                float bias = _SL_Bias.x + _SL_Bias.y * (1 - ndl);
+                int radius = (int)_SL_MapInfo.w;
                 float result = 0;
                 [loop] for (int y = -radius; y <= radius; y++)
                     [loop] for (int x = -radius; x <= radius; x++)
-                        result += CompareDepth(uv + float2(x,y) * _SL_MapInfo.xy * _SL_MapInfo.z, d);
+                    {
+                        float2 sampleUV = uv + float2(x,y) * _SL_MapInfo.xy * _SL_MapInfo.z;
+                        result += CompareReceiverPlane(sampleUV, d, positionWS, planeNormal, bias);
+                    }
                 float width = 2 * radius + 1;
                 return result / (width * width);
             }
             half4 Frag(Varyings input) : SV_Target
             {
                 float3 n = normalize(input.normalWS);
+                // Geometric receiver plane, computed before any divergent shadow
+                // branches. Smooth shading normals are not the triangle's plane.
+                float3 planeCross = cross(ddx(input.positionWS), ddy(input.positionWS));
+                float planeLengthSq = dot(planeCross, planeCross);
+                float3 planeNormal = planeLengthSq > 1e-16 ?
+                    planeCross * rsqrt(max(planeLengthSq, 1e-16)) : n;
                 float3 toLight = _SL_LightPosition - input.positionWS;
                 float distanceSquared = max(dot(toLight, toLight), .01);
                 float3 l = toLight * rsqrt(distanceSquared);
@@ -80,7 +121,7 @@ Shader "ShadowLab/Receiver"
                 float spot = smoothstep(_SL_Bias.w, min(1.0, _SL_Bias.w + .08), cone);
                 float viewDepth = dot(input.positionWS - _SL_LightPosition, _SL_LightForward);
                 spot *= step(_SL_Bias.z * _SL_Far, viewDepth) * step(viewDepth, _SL_Far);
-                float visibility = Visibility(input.positionWS, ndl);
+                float visibility = Visibility(input.positionWS, ndl, planeNormal);
                 float illumination = ndl * visibility * spot * (55 / distanceSquared);
                 return half4(_BaseColor.rgb * (.13 + illumination * float3(1,.92,.8)), 1);
             }
