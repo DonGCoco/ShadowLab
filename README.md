@@ -2,7 +2,7 @@
 
 A focused real-time shadow-mapping study for Unity URP, written in C# and HLSL.
 
-**Status: initial implementation. Not yet compiled or visually validated in Unity / on macOS Metal. No benchmark results or completed PCSS implementation are claimed.**
+**Status: v0.2 diagnostic fix. The initial scene compiled and ran on the user's Mac, but cast shadows were missing. This revision changes shadow draw submission, transform handling and preview; it still requires Mac verification. No benchmark results or completed PCSS implementation are claimed.**
 
 ## Implemented in source
 
@@ -44,3 +44,9 @@ This is an educational rendering implementation, with AI-assisted code generatio
 PCF averages visibility comparisons; a bigger kernel alone does not model contact-hardening penumbrae. **PCSS is a future milestone**, after hard shadows and PCF pass visual and performance checks.
 
 See [validation checklist](Docs/VALIDATION.md), [algorithm notes](Docs/ALGORITHMS.md) and [roadmap](Docs/ROADMAP.md).
+
+## Updating an existing demo to v0.2
+
+Exit Play mode. Replace only `Assets/ShadowLab/Runtime/ShadowLabController.cs` and `Assets/ShadowLab/Shaders/LinearDepth.shader` with the latest versions (preserve existing .meta files). No scene regeneration or material replacement is needed. Wait for compilation, enter Play, pause animation, press Baseline and enable Show shadow map. The panel must say **ShadowLab v0.2**. Record the shadow draw submission count and the grayscale preview. A nonzero count means commands were submitted, not proof of successful GPU rendering.
+
+This revision uses explicit per-mesh object matrices, two-sided shadow casting and SRP-context-ordered command execution. Raw single-channel textures appear red in IMGUI; the new preview copies red depth into all RGB channels. White still means empty or far. If it is uniformly white, check the Console and capture the panel plus preview; do not assume PCF settings are the cause.

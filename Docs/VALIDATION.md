@@ -2,7 +2,7 @@
 
 ## Current evidence
 
-Only source-level checks have been performed in the authoring environment. Unity Editor, a shader compiler for Unity, and a macOS Metal GPU were unavailable. All checkboxes below remain pending until run on real hardware.
+The initial version compiled and its controls, geometry and lighting ran on the user's Mac (screen recording / screenshot supplied). Cast shadows were missing and the raw RFloat preview appeared uniformly red. Exact Editor / URP versions and the cause are not yet confirmed. v0.2 changes explicit mesh transforms, shadow culling, SRP command ordering and RGB preview. Its rendering remains unverified; checkboxes below describe the acceptance checklist, not completed results.
 
 ## First-run checklist
 

@@ -24,6 +24,10 @@ namespace ShadowLab
         public float farPlane = 25;
         public float fieldOfView = 70;
         RenderTexture map;
+        RenderTexture depthPreview;
+        MaterialPropertyBlock drawProperties;
+        int submittedDraws;
+        int lastSubmissionFrame = -1;
         CommandBuffer commands;
         float elapsed;
         Vector3 movingOrigin;
@@ -34,6 +38,7 @@ namespace ShadowLab
         {
             if (movingObject) movingOrigin = movingObject.position;
             commands = new CommandBuffer { name = "ShadowLab custom shadow map" };
+            drawProperties = new MaterialPropertyBlock();
             RenderPipelineManager.beginCameraRendering += RenderShadows;
         }
 
@@ -63,7 +68,12 @@ namespace ShadowLab
                 wrapMode = TextureWrapMode.Clamp, antiAliasing = 1,
                 useMipMap = false, autoGenerateMips = false
             };
-            map.Create();
+            if (!map.Create()) Debug.LogError("ShadowLab could not create the shadow map.");
+            depthPreview = new RenderTexture(256, 256, 0, RenderTextureFormat.ARGB32,
+                RenderTextureReadWrite.Linear) {
+                name = "ShadowLab Grayscale Preview", filterMode = FilterMode.Point
+            };
+            depthPreview.Create();
         }
 
         void RenderShadows(ScriptableRenderContext context, Camera camera)
@@ -93,33 +103,45 @@ namespace ShadowLab
             commands.SetGlobalVector("_SL_LightPosition", lightRig.position);
             commands.SetGlobalVector("_SL_LightForward", lightRig.forward);
             commands.SetGlobalFloat("_SL_Far", farPlane);
+            submittedDraws = 0;
             if (casters != null)
                 foreach (Renderer caster in casters)
                 {
                     if (!caster || !caster.enabled || !caster.gameObject.activeInHierarchy) continue;
                     var meshFilter = caster.GetComponent<MeshFilter>();
                     if (!meshFilter || !meshFilter.sharedMesh) continue;
+                    // Supply object transform explicitly: do not depend on Renderer state
+                    // established by the display camera or SRP Batcher.
+                    drawProperties.Clear();
+                    drawProperties.SetMatrix("_SL_ObjectToWorld", caster.localToWorldMatrix);
                     for (int submesh = 0; submesh < meshFilter.sharedMesh.subMeshCount; submesh++)
-                        commands.DrawRenderer(caster, depthMaterial, submesh, 0);
+                    {
+                        commands.DrawMesh(meshFilter.sharedMesh, Matrix4x4.identity,
+                            depthMaterial, submesh, 0, drawProperties);
+                        submittedDraws++;
+                    }
                 }
             commands.EndSample("ShadowLab.ShadowMap");
-            // Executed before URP configures its camera targets. No Camera.Render or
-            // legacy replacement shaders; no RenderGraph compatibility toggle needed.
-            Graphics.ExecuteCommandBuffer(commands);
-            Shader.SetGlobalTexture("_SL_ShadowMap", map);
-            Shader.SetGlobalVector("_SL_MapInfo", new Vector4(1f / resolution, 1f / resolution,
+            if (showDepth && depthMaterial.passCount > 1)
+                commands.Blit(map, depthPreview, depthMaterial, 1);
+            commands.SetGlobalTexture("_SL_ShadowMap", map);
+            commands.SetGlobalVector("_SL_MapInfo", new Vector4(1f / resolution, 1f / resolution,
                 filterRadius, (int)filter));
-            Shader.SetGlobalVector("_SL_Bias", new Vector4(constantBias, slopeBias,
+            commands.SetGlobalVector("_SL_Bias", new Vector4(constantBias, slopeBias,
                 nearPlane / farPlane, Mathf.Cos(fieldOfView * .5f * Mathf.Deg2Rad)));
+            // Queue on the active SRP context so writes precede URP receiver draws.
+            // URP owns Submit(); never submit this context ourselves.
+            context.ExecuteCommandBuffer(commands);
+            lastSubmissionFrame = Time.frameCount;
         }
 
         void OnGUI()
         {
             if (!showPanel) return;
             panel = GUI.Window(GetInstanceID(), panel, DrawPanel, "ShadowLab | custom shadows");
-            if (showDepth && map) {
+            if (showDepth && depthPreview) {
                 float size = Mathf.Min(300, Screen.width * .3f);
-                GUI.DrawTexture(new Rect(Screen.width - size - 16, 16, size, size), map,
+                GUI.DrawTexture(new Rect(Screen.width - size - 16, 16, size, size), depthPreview,
                     ScaleMode.ScaleToFit, false);
                 GUI.Label(new Rect(Screen.width - size - 16, size + 20, size, 50),
                     "Linear light depth (white = far / empty)");
@@ -128,7 +150,8 @@ namespace ShadowLab
 
         void DrawPanel(int id)
         {
-            GUILayout.Label("Single spotlight / opaque MeshRenderers");
+            GUILayout.Label("ShadowLab v0.2 | opaque meshes");
+            GUILayout.Label($"Shadow draw submissions: {submittedDraws} | frame {lastSubmissionFrame}");
             filter = (Filter)GUILayout.SelectionGrid((int)filter,
                 new[] { "Hard", "PCF 3x3", "PCF 5x5" }, 3);
             int selected = resolution <= 512 ? 0 : resolution <= 1024 ? 1 : 2;
@@ -167,6 +190,11 @@ namespace ShadowLab
         }
         void ReleaseMap()
         {
+            if (depthPreview) {
+                depthPreview.Release();
+                if (Application.isPlaying) Destroy(depthPreview); else DestroyImmediate(depthPreview);
+                depthPreview = null;
+            }
             if (!map) return;
             map.Release();
             if (Application.isPlaying) Destroy(map); else DestroyImmediate(map);
