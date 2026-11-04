@@ -8,7 +8,7 @@
 4. In the visible receiver pass, project the world position using the same GPU projection matrix and map xy from [-1,1] to [0,1].
 5. Compute the same normalized linear light depth. Compare it with the stored depth after subtracting a receiver bias.
 
-GPU projection is constructed with `GL.GetGPUProjectionMatrix(projection, true)` for a render-texture destination. Light camera space uses a Z reflection because Unity transforms point forward along +Z while view space faces -Z. Hardware depth clearing accounts for reversed Z. The sampled COLOR depth convention is deliberately independent of hardware depth conventions. Verify vertical orientation and occlusion on Metal before assuming portability.
+GPU projection is constructed with `GL.GetGPUProjectionMatrix(projection, true)` for a render-texture destination. Light camera space uses a Z reflection because Unity transforms point forward along +Z while view space faces -Z. The command uses Unity\'s default logical clear depth; it does not manually reverse that parameter. The sampled COLOR depth convention is deliberately independent of hardware depth conventions. Verify vertical orientation and occlusion on Metal before assuming portability.
 
 ## Bias
 

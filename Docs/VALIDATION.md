@@ -34,3 +34,7 @@ Use Unity Profiler GPU module if supported by the selected macOS configuration, 
 | 5x5 PCF | 1024 | 1 | pending | pending | pending | pending |
 
 Repeat at 512 and 2048. Preserve raw captures and settings. Do not interpret shader comparison counts as measured GPU speedups.
+
+## Mac observation and v0.3 follow-up
+
+The user's v0.2 screenshot confirms Unity 6.3 LTS 6000.3.24f1, Metal, 15 shadow draw submissions, and a uniform grayscale map with absent cast shadows. This is a failed rendering check. v0.3 removes the explicit reversed-Z depth clear and adds on-demand GPU min/max and coverage readback. Compilation and rendering of v0.3 remain pending. A written-pixel ratio is based on linear depth < 0.9999 and is a diagnostic heuristic, not a full correctness test.

@@ -50,3 +50,9 @@ See [validation checklist](Docs/VALIDATION.md), [algorithm notes](Docs/ALGORITHM
 Exit Play mode. Replace only `Assets/ShadowLab/Runtime/ShadowLabController.cs` and `Assets/ShadowLab/Shaders/LinearDepth.shader` with the latest versions (preserve existing .meta files). No scene regeneration or material replacement is needed. Wait for compilation, enter Play, pause animation, press Baseline and enable Show shadow map. The panel must say **ShadowLab v0.2**. Record the shadow draw submission count and the grayscale preview. A nonzero count means commands were submitted, not proof of successful GPU rendering.
 
 This revision uses explicit per-mesh object matrices, two-sided shadow casting and SRP-context-ordered command execution. Raw single-channel textures appear red in IMGUI; the new preview copies red depth into all RGB channels. White still means empty or far. If it is uniformly white, check the Console and capture the panel plus preview; do not assume PCF settings are the cause.
+
+## v0.3: depth clear correction
+
+The shadow pass now uses `ClearRenderTarget(true, true, Color.white)` with the API's default logical far depth. The previous explicit reversed-Z clear override is removed. This is the leading depth-rejection hypothesis, not a verified fix on Metal yet. Update only `Runtime/ShadowLabController.cs` over v0.2; keep its .meta file and the existing scene. The panel should show v0.3.
+
+If the map remains uniform, press **Read GPU depth range** and report the min/max and written-pixel percentage alongside Console errors. This distinguishes an empty depth map from a preview that merely looks flat. GPU readback is on demand for diagnostics; it is not a benchmark and should not be requested during performance measurement.

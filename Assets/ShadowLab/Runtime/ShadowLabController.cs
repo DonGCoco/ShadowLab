@@ -27,12 +27,14 @@ namespace ShadowLab
         RenderTexture depthPreview;
         MaterialPropertyBlock drawProperties;
         int submittedDraws;
+        string depthStatistics = "GPU depth range: not sampled";
+        bool readbackPending;
         int lastSubmissionFrame = -1;
         CommandBuffer commands;
         float elapsed;
         Vector3 movingOrigin;
         bool warned;
-        Rect panel = new Rect(14, 14, 330, 560);
+        Rect panel = new Rect(14, 14, 350, 620);
 
         void OnEnable()
         {
@@ -97,8 +99,9 @@ namespace ShadowLab
             commands.BeginSample("ShadowLab.ShadowMap");
             commands.SetRenderTarget(map);
             commands.SetViewport(new Rect(0, 0, resolution, resolution));
-            commands.ClearRenderTarget(true, true, Color.white,
-                SystemInfo.usesReversedZBuffer ? 0f : 1f);
+            // ClearRenderTarget uses Unity's logical clear depth. Keep its default
+            // far value instead of manually applying reversed-Z a second time.
+            commands.ClearRenderTarget(true, true, Color.white);
             commands.SetGlobalMatrix("_SL_LightVP", vp);
             commands.SetGlobalVector("_SL_LightPosition", lightRig.position);
             commands.SetGlobalVector("_SL_LightForward", lightRig.forward);
@@ -150,7 +153,7 @@ namespace ShadowLab
 
         void DrawPanel(int id)
         {
-            GUILayout.Label("ShadowLab v0.2 | opaque meshes");
+            GUILayout.Label("ShadowLab v0.3 | opaque meshes");
             GUILayout.Label($"Shadow draw submissions: {submittedDraws} | frame {lastSubmissionFrame}");
             filter = (Filter)GUILayout.SelectionGrid((int)filter,
                 new[] { "Hard", "PCF 3x3", "PCF 5x5" }, 3);
@@ -177,8 +180,44 @@ namespace ShadowLab
                 filter = Filter.PCF3x3; resolution = 1024;
             }
             GUILayout.Space(8);
+            GUI.enabled = !readbackPending && map;
+            if (GUILayout.Button("Read GPU depth range")) ReadDepthRange();
+            GUI.enabled = true;
+            GUILayout.Label(depthStatistics);
+            GUILayout.Space(8);
             GUILayout.Label("Frame time / FPS is NOT GPU shadow timing.\nUse Unity Profiler / GPU capture.\nPCSS: planned, not implemented.\nMac visual validation: pending.");
             GUI.DragWindow(new Rect(0, 0, 330, 22));
+        }
+
+        void ReadDepthRange()
+        {
+            if (!map || readbackPending) return;
+            if (!SystemInfo.supportsAsyncGPUReadback) {
+                depthStatistics = "GPU readback unavailable on this device";
+                return;
+            }
+            readbackPending = true;
+            depthStatistics = "GPU depth range: reading...";
+            AsyncGPUReadback.Request(map, 0, TextureFormat.RFloat, request => {
+                readbackPending = false;
+                if (!this || !isActiveAndEnabled) return;
+                if (request.hasError) {
+                    depthStatistics = "GPU depth readback failed; check Console";
+                    return;
+                }
+                var data = request.GetData<float>();
+                float minimum = float.PositiveInfinity, maximum = float.NegativeInfinity;
+                int covered = 0, invalid = 0;
+                for (int i = 0; i < data.Length; i++) {
+                    float value = data[i];
+                    if (float.IsNaN(value) || float.IsInfinity(value)) { invalid++; continue; }
+                    minimum = Mathf.Min(minimum, value);
+                    maximum = Mathf.Max(maximum, value);
+                    if (value < .9999f) covered++;
+                }
+                depthStatistics = $"GPU depth: {minimum:F4} .. {maximum:F4}\n" +
+                    $"Written pixels: {100f * covered / Mathf.Max(1, data.Length):F1}% | invalid {invalid}";
+            });
         }
 
         void OnDisable()
