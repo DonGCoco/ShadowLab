@@ -2,13 +2,14 @@
 
 A focused real-time shadow-mapping study for Unity URP, written in C# and HLSL.
 
-**Status: v0.4 source revision, pending Unity / Metal validation. User recordings show basic cast shadows and PCF switching working after v0.3 + UV correction; wide PCF caused receiver stripes and the old depth preview remained flat. v0.4 addresses these two issues. No GPU benchmark results or PCSS implementation are claimed.**
+**Status: v0.5 adds an initial PCSS implementation, pending Unity / Metal validation. User screenshots of v0.4 show hard/PCF cast shadows, improved ground stripes with receiver-plane correction and a recognizable depth preview. No GPU benchmark results are available.**
 
 ## Implemented in source
 
 - Independent spotlight shadow map, explicitly drawing opaque MeshRenderers.
 - Linear light-view depth stored in RFloat; separate hardware depth for visibility.
 - Hard shadows, 3x3 PCF and 5x5 PCF (1 / 9 / 25 depth comparisons).
+- Initial PCSS: 32-sample blocker search and up to 32 visibility samples on a fixed Vogel disk, adjustable emitter radius and footprint caps.
 - Adjustable constant bias, normal-angle-based bias, filter spacing and map resolution.
 - Optional perspective-correct geometric receiver-plane depth per PCF texel.
 - Runtime controls, light / sphere animation and shadow-map preview.
@@ -42,11 +43,11 @@ The map is rendered before URP camera rendering via an explicit command buffer. 
 
 This is an educational rendering implementation, with AI-assisted code generation. Reproducing established shadow algorithms is not a novel algorithm contribution. Read and understand the code, document fixes and record actual results before presenting it as a validated portfolio project.
 
-PCF averages visibility comparisons; a bigger kernel alone does not model contact-hardening penumbrae. **PCSS is a future milestone**, after hard shadows and PCF pass visual and performance checks.
+PCF averages visibility comparisons; a bigger kernel alone does not model contact-hardening penumbrae. PCSS estimates a variable footprint from blocker depth and emitter radius. It is an approximate single-map shadow method; the light's diffuse term is still a point spotlight, not physically integrated area lighting.
 
 See [validation checklist](Docs/VALIDATION.md), [algorithm notes](Docs/ALGORITHMS.md) and [roadmap](Docs/ROADMAP.md).
 
-## Update an existing demo to v0.4
+## Update an existing demo to v0.5
 
 Exit Play mode and replace these files, preserving their existing .meta files:
 
@@ -54,7 +55,7 @@ Exit Play mode and replace these files, preserving their existing .meta files:
 - `Assets/ShadowLab/Shaders/Receiver.shader`
 - `Assets/ShadowLab/Shaders/LinearDepth.shader`
 
-No scene regeneration is required. After compilation the panel should say **v0.4**. Press **Baseline** to enable receiver-plane correction. Freeze animation, select **512**, set spacing to **2.1**, and compare **5x5 PCF** with **Receiver-plane depth correction** off / on. Correction should reduce false self-shadow stripes on the ground without erasing real object shadows; this visual acceptance check is still pending.
+No scene regeneration is required. After compilation the panel should say **v0.5**. Press **Baseline** to enable receiver-plane correction. Freeze animation, select **512**, set spacing to **2.1**, and compare **5x5 PCF** with **Receiver-plane depth correction** off / on. Correction should reduce false self-shadow stripes on the ground without erasing real object shadows; the user's v0.4 screenshots showed this improvement in the tested scene.
 
 Enable **Show shadow map**. The preview uses an explicit clip-space triangle with a dedicated texture binding, rather than legacy Blit. **Preview max depth** changes display contrast only. Magenta means the preview target was cleared but its draw did not complete. An all-white preview can indicate empty / far data; use **Read GPU depth range** to distinguish stored values from a display failure.
 
@@ -66,4 +67,17 @@ Receiver-plane correction adds shader arithmetic; measure its cost rather than a
 python3 -m unittest discover -s Tests -v
 ```
 
-Five tests verify top/bottom-origin projection, known tilted receiver planes across 512/1024/2048 maps, reproduction of false self-shadow without correction, preservation of a real blocker, and preview-triangle coverage. They do **not** compile Unity shaders or validate Metal rendering.
+Ten tests verify top/bottom-origin projection, known tilted receiver planes across 512/1024/2048 maps, reproduction of false self-shadow without correction, preservation of a real blocker, preview-triangle coverage, contact / point-light limits, known penumbra geometry, monotonicity, scale invariance and disk bounds. They do **not** compile Unity shaders or validate Metal rendering.
+
+## PCSS first run
+
+Update only Controller.cs and Receiver.shader over v0.4; the v0.4 LinearDepth.shader remains current. Preserve .meta files and the existing scene.
+
+1. Press Baseline, disable animation, select 1024, leave receiver-plane correction on.
+2. Select PCSS. Start with emitter radius 0.30, search cap 32 and filter cap 32 texels.
+3. At fixed sphere center height 2.0, compare emitter radius 0 / 0.15 / 0.30 / 0.60.
+4. At fixed emitter radius 0.30, compare sphere center heights 0.8 / 2.0 / 3.0.
+5. Compare Hard / PCF / PCSS. PCF spacing does not control PCSS.
+6. Re-enable animation to inspect stability; disable preview and stop diagnostic readbacks before timing.
+
+The expected trend is sharper contact and broader penumbrae with greater separation or emitter size. This trend is **not yet visually verified in this revision**. Fixed sampling avoids deliberately injected frame-to-frame randomness, but sampling artifacts / motion shimmer remain possible. Sparse blocker search can miss thin occluders. Texel caps deliberately truncate the theoretical footprints, so large emitter settings and cap values affect accuracy. For a cap-sensitivity check, vary caps at a fixed emitter size and pose; do not treat capped output as a physically exact area-light shadow.

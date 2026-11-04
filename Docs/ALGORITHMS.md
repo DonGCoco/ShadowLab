@@ -42,3 +42,24 @@ References describe principles and related implementations; the current project 
 ## Explicit grayscale preview
 
 The second depth-material pass reads `_SL_PreviewSource` and replicates its red channel to RGB, with a separate display range. An explicit clip-space triangle covers the preview render target and handles top-origin UVs. The path does not depend on `_MainTex`, legacy Blit vertex transforms or the display camera matrix. Clearing preview to magenta exposes a failed preview draw. Preview generation is separate from the ShadowMap profiling sample and is excluded by disabling Show shadow map.
+
+## PCSS (v0.5, initial implementation)
+
+1. Project the receiver into the existing shadow map; retain the validated top-origin UV conversion.
+2. Search 32 fixed Vogel disk positions, including the center. Snap each to a shadow texel and classify it using the corrected local receiver plane and residual bias. Ignore empty / out-of-map taps. Average the stored linear **light-view** distances of blockers.
+3. If no blockers are found, return lit. A zero emitter radius uses the existing hard visibility comparison.
+4. Let R be emitter radius in world units, zr the linear receiver distance, zb the mean blocker distance, n the near plane and T = tan(fov/2). Use:
+
+   searchRadiusUV = R * (zr - n) / (2*T*n*zr)
+
+   penumbraWorld = R * max(zr - zb, 0) / zb
+
+   filterRadiusUV = penumbraWorld / (2*T*zr)
+
+5. Clamp search and filter radii by their separate texel caps, then average 32 corrected depth comparisons over the variable filter disk.
+
+The code stores depth normalized by far distance; it converts blocker and receiver values back to world units before the similar-triangles calculation. Emitter radius is independent of PCF's spacing control. The square perspective map has aspect 1. The fixed spiral is Vogel sampling, not a Poisson disk or temporal stochastic method. This is a shadow softness approximation; spotlight illumination remains point-based.
+
+Limitations: blocker averaging across unrelated surfaces, finite / sparse search, thin-occluder misses, footprint truncation, local-plane extrapolation and frustum boundaries. Search and filtering can use up to 64 depth reads per pixel; early exits and residual self-shadow tests change actual execution. Ray-plane work and trigonometry also cost GPU time. No performance claim follows from sample counts alone.
+
+Reference: https://developer.download.nvidia.com/whitepapers/2008/PCSS_Integration.pdf

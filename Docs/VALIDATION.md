@@ -56,3 +56,20 @@ After v0.3 the user's video shows cast shadows, but also incorrect large diagona
 - [ ] GPU readback range agrees with empty / populated map interpretation.
 - [ ] Disable preview before timing; compare receiver-plane correction off/on at fixed camera, light, map and filter.
 - [ ] Repeat Play entry/exit and resolution switches with no resource errors.
+
+## v0.4 observations and v0.5 PCSS checklist
+
+User screenshots show hard / 3x3 / 5x5 filtering at 512 with receiver-plane correction enabled and no previously obvious curved floor stripes in those views. A subsequent screenshot shows recognizable geometry in the depth preview. These are limited scene observations, not broad angle / performance validation.
+
+v0.5 has 10 passing CPU geometry checks, but its Unity compilation and PCSS appearance remain pending.
+
+- [ ] Import v0.5 without Console errors; old Hard / PCF results are preserved.
+- [ ] PCSS emitter radius 0 matches Hard at the same pose, map and biases.
+- [ ] Larger emitter radius broadens penumbrae at fixed receiver / blocker geometry.
+- [ ] Raising sphere center height from 0.8 to 2.0 to 3.0 changes separation and softness as expected.
+- [ ] Thin poles do not disappear unexpectedly; inspect sparse blocker misses.
+- [ ] Vary search and filter caps to detect truncated footprints.
+- [ ] No ground stripes reappear with correction on; test extreme light angles.
+- [ ] Inspect motion shimmer / pattern artifacts and document limitations.
+- [ ] Disable preview, freeze motion and profile GPU cost separately; no measurements yet.
+- [ ] Exercise panel scrolling on a small Game view.

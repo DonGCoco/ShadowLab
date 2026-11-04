@@ -6,7 +6,7 @@ namespace ShadowLab
     /// <summary>Explicit mesh-only shadow pass, independent of URP's shadow atlas.</summary>
     public sealed class ShadowLabController : MonoBehaviour
     {
-        public enum Filter { Hard, PCF3x3, PCF5x5 }
+        public enum Filter { Hard, PCF3x3, PCF5x5, PCSS }
         public Transform lightRig;
         public Transform movingObject;
         public Renderer[] casters;
@@ -21,6 +21,10 @@ namespace ShadowLab
         public bool showDepth;
         public bool showPanel = true;
         public bool receiverPlaneBias = true;
+        [Range(0, 1)] public float emitterRadius = .3f;
+        [Range(4, 128)] public float searchRadiusCap = 32;
+        [Range(1, 64)] public float filterRadiusCap = 32;
+        [Range(.8f, 3)] public float sphereHeight = 2;
         [Range(.05f, 1)] public float previewMaxDepth = .6f;
         public float nearPlane = .2f;
         public float farPlane = 25;
@@ -37,7 +41,8 @@ namespace ShadowLab
         float elapsed;
         Vector3 movingOrigin;
         bool warned;
-        Rect panel = new Rect(14, 14, 370, 700);
+        Rect panel = new Rect(14, 14, 390, 790);
+        Vector2 panelScroll;
 
         void OnEnable()
         {
@@ -56,7 +61,11 @@ namespace ShadowLab
 
         void Update()
         {
-            if (!animate) return;
+            if (!animate) {
+                if (movingObject)
+                    movingObject.position = new Vector3(movingOrigin.x, sphereHeight, movingOrigin.z);
+                return;
+            }
             elapsed += Time.deltaTime;
             if (lightRig)
             {
@@ -64,7 +73,7 @@ namespace ShadowLab
                 lightRig.LookAt(new Vector3(0, .5f, 0));
             }
             if (movingObject)
-                movingObject.position = movingOrigin + Vector3.up * (Mathf.Sin(elapsed) * .7f);
+                movingObject.position = new Vector3(movingOrigin.x, sphereHeight + Mathf.Sin(elapsed) * .7f, movingOrigin.z);
         }
 
         void EnsureMap()
@@ -115,6 +124,9 @@ namespace ShadowLab
             commands.SetGlobalMatrix("_SL_LightVP", vp);
             commands.SetGlobalMatrix("_SL_LightVPInverse", vp.inverse);
             commands.SetGlobalFloat("_SL_ReceiverPlane", receiverPlaneBias ? 1f : 0f);
+            commands.SetGlobalFloat("_SL_NearPlane", nearPlane);
+            commands.SetGlobalVector("_SL_PCSS", new Vector4(emitterRadius,
+                Mathf.Tan(fieldOfView * .5f * Mathf.Deg2Rad), searchRadiusCap, filterRadiusCap));
             commands.SetGlobalVector("_SL_LightPosition", lightRig.position);
             commands.SetGlobalVector("_SL_LightForward", lightRig.forward);
             commands.SetGlobalFloat("_SL_Far", farPlane);
@@ -164,6 +176,7 @@ namespace ShadowLab
         void OnGUI()
         {
             if (!showPanel) return;
+            panel.height = Mathf.Min(790, Mathf.Max(200, Screen.height - 28));
             panel = GUI.Window(GetInstanceID(), panel, DrawPanel, "ShadowLab | custom shadows");
             if (showDepth && depthPreview) {
                 float size = Mathf.Min(300, Screen.width * .3f);
@@ -176,10 +189,11 @@ namespace ShadowLab
 
         void DrawPanel(int id)
         {
-            GUILayout.Label("ShadowLab v0.4 | receiver-plane PCF");
+            panelScroll = GUILayout.BeginScrollView(panelScroll, GUILayout.Height(panel.height - 40));
+            GUILayout.Label("ShadowLab v0.5 | PCF + PCSS");
             GUILayout.Label($"Shadow draw submissions: {submittedDraws} | frame {lastSubmissionFrame}");
             filter = (Filter)GUILayout.SelectionGrid((int)filter,
-                new[] { "Hard", "PCF 3x3", "PCF 5x5" }, 3);
+                new[] { "Hard", "PCF 3x3", "PCF 5x5", "PCSS" }, 4);
             GUILayout.Label($"Active: {filter} | {resolution}px");
             int selected = resolution <= 512 ? 0 : resolution <= 1024 ? 1 : 2;
             selected = GUILayout.SelectionGrid(selected, new[] { "512", "1024", "2048" }, 3);
@@ -190,7 +204,21 @@ namespace ShadowLab
             slopeBias = GUILayout.HorizontalSlider(slopeBias, 0, .05f);
             GUILayout.Label($"PCF radius / texel spacing: {filterRadius:F2}");
             filterRadius = GUILayout.HorizontalSlider(filterRadius, .25f, 4);
+            if (filter == Filter.PCSS) {
+                GUILayout.Label($"Emitter radius: {emitterRadius:F2} world units");
+                emitterRadius = GUILayout.HorizontalSlider(emitterRadius, 0, 1);
+                GUILayout.Label("32 blocker + up to 32 filter depth samples");
+                GUILayout.Label($"Search cap: {searchRadiusCap:F0} texels");
+                searchRadiusCap = GUILayout.HorizontalSlider(searchRadiusCap, 4, 128);
+                GUILayout.Label($"Filter cap: {filterRadiusCap:F0} texels");
+                filterRadiusCap = GUILayout.HorizontalSlider(filterRadiusCap, 1, 64);
+                GUILayout.Label("PCF spacing above does not control PCSS.");
+            }
             animate = GUILayout.Toggle(animate, "Animate light and floating sphere");
+            if (!animate) {
+                GUILayout.Label($"Sphere center height: {sphereHeight:F2}");
+                sphereHeight = GUILayout.HorizontalSlider(sphereHeight, .8f, 3);
+            }
             receiverPlaneBias = GUILayout.Toggle(receiverPlaneBias, "Receiver-plane depth correction");
             showDepth = GUILayout.Toggle(showDepth, "Show shadow map");
             if (showDepth) {
@@ -214,8 +242,9 @@ namespace ShadowLab
             GUI.enabled = true;
             GUILayout.Label(depthStatistics);
             GUILayout.Space(8);
-            GUILayout.Label("Frame time / FPS is NOT GPU shadow timing.\nUse Unity Profiler / GPU capture.\nPCSS: planned, not implemented.\nMac visual validation: pending.");
-            GUI.DragWindow(new Rect(0, 0, 370, 22));
+            GUILayout.Label("Frame time / FPS is NOT GPU shadow timing.\nUse Unity Profiler / GPU capture.\nPCSS: initial implementation, unverified.\nMac visual validation: pending.");
+            GUILayout.EndScrollView();
+            GUI.DragWindow(new Rect(0, 0, 390, 22));
         }
 
         void ReadDepthRange()

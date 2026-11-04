@@ -85,5 +85,41 @@ class ReceiverPlaneGeometry(unittest.TestCase):
             self.assertLessEqual(x+y,2)
 
 
+def penumbra_uv(emitter_radius, receiver, blocker, tan_half_fov=TAN):
+    if emitter_radius <= 0 or receiver <= blocker:
+        return 0.0
+    world_radius=emitter_radius*(receiver-blocker)/blocker
+    return world_radius/(2*tan_half_fov*receiver)
+
+
+class PCSSGeometry(unittest.TestCase):
+    def test_contact_and_point_light_limits(self):
+        self.assertEqual(penumbra_uv(.3,8,8),0)
+        self.assertEqual(penumbra_uv(0,8,6),0)
+
+    def test_known_similar_triangles(self):
+        # emitter .3, receiver 8, blocker 6 -> world radius .1.
+        expected=.1/(2*TAN*8)
+        self.assertAlmostEqual(penumbra_uv(.3,8,6),expected)
+
+    def test_softness_grows_with_emitter_and_separation(self):
+        self.assertGreater(penumbra_uv(.6,8,6),penumbra_uv(.3,8,6))
+        self.assertGreater(penumbra_uv(.3,10,6),penumbra_uv(.3,8,6))
+
+    def test_physical_scaling_preserves_projected_radius(self):
+        self.assertAlmostEqual(penumbra_uv(.3,8,6),penumbra_uv(3,80,60))
+
+    def test_vogel_samples_include_center_and_stay_in_disk(self):
+        samples=[(0,0)]
+        for index in range(1,32):
+            radius=math.sqrt((index-.5)/31)
+            angle=index*2.39996323
+            samples.append((radius*math.cos(angle),radius*math.sin(angle)))
+        self.assertEqual(len(samples),32)
+        self.assertEqual(samples[0],(0,0))
+        for x,y in samples:
+            self.assertLessEqual(x*x+y*y,1.0)
+
+
 if __name__ == '__main__':
     unittest.main()

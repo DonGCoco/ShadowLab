@@ -23,6 +23,8 @@ Shader "ShadowLab/Receiver"
             float4x4 _SL_LightVP;
             float4x4 _SL_LightVPInverse;
             float _SL_ReceiverPlane;
+            float4 _SL_PCSS; // emitter radius (world), tan(fov/2), search cap, filter cap
+            float _SL_NearPlane;
             float3 _SL_LightPosition, _SL_LightForward;
             float _SL_Far;
             float4 _SL_MapInfo; // inverse size xy, filter spacing z, mode w
@@ -52,11 +54,9 @@ Shader "ShadowLab/Receiver"
 
             // Use the center of the actual point-sampled texel, not just the
             // requested offset. They differ at low resolution / wide spacing.
-            float CompareReceiverPlane(float2 requestedUV, float centerDepth,
-                float3 receiverPosition, float3 planeNormal, float bias)
+            float ReceiverDepthAtTexel(float2 texelUV, float centerDepth,
+                float3 receiverPosition, float3 planeNormal)
             {
-                if (any(requestedUV < 0) || any(requestedUV >= 1)) return 1;
-                float2 texelUV = (floor(requestedUV / _SL_MapInfo.xy) + .5) * _SL_MapInfo.xy;
                 float referenceDepth = centerDepth;
                 if (_SL_ReceiverPlane > .5)
                 {
@@ -80,9 +80,78 @@ Shader "ShadowLab/Receiver"
                             referenceDepth = planeDepth;
                     }
                 }
+                return referenceDepth;
+            }
+
+            float2 TexelCenter(float2 uv)
+            {
+                return (floor(uv / _SL_MapInfo.xy) + .5) * _SL_MapInfo.xy;
+            }
+
+            float CompareReceiverPlane(float2 requestedUV, float centerDepth,
+                float3 receiverPosition, float3 planeNormal, float bias)
+            {
+                if (any(requestedUV < 0) || any(requestedUV >= 1)) return 1;
+                float2 texelUV = TexelCenter(requestedUV);
+                float referenceDepth = ReceiverDepthAtTexel(texelUV, centerDepth,
+                    receiverPosition, planeNormal);
                 float storedDepth = SAMPLE_TEXTURE2D_LOD(_SL_ShadowMap,
                     sampler_SL_ShadowMap, texelUV, 0).r;
                 return referenceDepth - bias <= storedDepth ? 1.0 : 0.0;
+            }
+
+            // Fixed Vogel spiral, not random per-frame noise or a Poisson pattern.
+            // Include the center explicitly so a small blocker in the umbra is sampled.
+            float2 DiskSample(int index)
+            {
+                if (index == 0) return float2(0,0);
+                float radius = sqrt((float(index) - .5) / 31.0);
+                float angle = float(index) * 2.39996323;
+                float sn, cs;
+                sincos(angle, sn, cs);
+                return radius * float2(cs, sn);
+            }
+
+            float PCSSVisibility(float2 uv, float d, float3 positionWS,
+                float3 planeNormal, float bias)
+            {
+                if (_SL_PCSS.x <= 1e-5)
+                    return CompareReceiverPlane(uv, d, positionWS, planeNormal, bias);
+                float receiverDistance = max(d * _SL_Far, _SL_NearPlane);
+                float projectionScale = 2 * max(_SL_PCSS.y, .001);
+                // Perspective spotlight search footprint at the near plane.
+                float searchUV = _SL_PCSS.x * max(receiverDistance - _SL_NearPlane, 0) /
+                    (projectionScale * _SL_NearPlane * receiverDistance);
+                searchUV = min(searchUV, _SL_PCSS.z * _SL_MapInfo.x);
+                float blockerSum = 0;
+                int blockerCount = 0;
+                [loop] for (int i = 0; i < 32; i++)
+                {
+                    float2 sampleUV = uv + DiskSample(i) * searchUV;
+                    if (any(sampleUV < 0) || any(sampleUV >= 1)) continue;
+                    float2 texelUV = TexelCenter(sampleUV);
+                    float referenceDepth = ReceiverDepthAtTexel(texelUV, d, positionWS, planeNormal);
+                    float stored = SAMPLE_TEXTURE2D_LOD(_SL_ShadowMap,
+                        sampler_SL_ShadowMap, texelUV, 0).r;
+                    if (stored < .9999 && stored < referenceDepth - bias)
+                    {
+                        blockerSum += stored * _SL_Far;
+                        blockerCount++;
+                    }
+                }
+                if (blockerCount == 0) return 1;
+                float blockerDistance = max(blockerSum / float(blockerCount), _SL_NearPlane);
+                // Similar triangles: penumbra world radius at receiver, then
+                // project using the RECEIVER distance, not the light near plane.
+                float penumbraWorld = _SL_PCSS.x *
+                    max(receiverDistance - blockerDistance, 0) / blockerDistance;
+                float filterUV = penumbraWorld / (projectionScale * receiverDistance);
+                filterUV = min(filterUV, _SL_PCSS.w * _SL_MapInfo.x);
+                float visibility = 0;
+                [loop] for (int j = 0; j < 32; j++)
+                    visibility += CompareReceiverPlane(uv + DiskSample(j) * filterUV,
+                        d, positionWS, planeNormal, bias);
+                return visibility / 32.0;
             }
 
             float Visibility(float3 positionWS, float ndl, float3 planeNormal)
@@ -93,6 +162,8 @@ Shader "ShadowLab/Receiver"
                 float d = dot(positionWS - _SL_LightPosition, _SL_LightForward) / _SL_Far;
                 if (any(uv < 0) || any(uv >= 1) || d < _SL_Bias.z || d > 1) return 1;
                 float bias = _SL_Bias.x + _SL_Bias.y * (1 - ndl);
+                if (_SL_MapInfo.w > 2.5)
+                    return PCSSVisibility(uv, d, positionWS, planeNormal, bias);
                 int radius = (int)_SL_MapInfo.w;
                 float result = 0;
                 [loop] for (int y = -radius; y <= radius; y++)
