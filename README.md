@@ -2,7 +2,7 @@
 
 A focused real-time shadow-mapping study for Unity URP, written in C# and HLSL.
 
-**Status: v0.5 adds an initial PCSS implementation, pending Unity / Metal validation. User screenshots of v0.4 show hard/PCF cast shadows, improved ground stripes with receiver-plane correction and a recognizable depth preview. No GPU benchmark results are available.**
+**Status: v0.6 adds GPU frame capture tooling (unverified on host). User testing confirms PCSS softness responds to emitter size and sphere height in the demo scene. GPU performance data has not been collected.**
 
 ## Implemented in source
 
@@ -81,3 +81,9 @@ Update only Controller.cs and Receiver.shader over v0.4; the v0.4 LinearDepth.sh
 6. Re-enable animation to inspect stability; disable preview and stop diagnostic readbacks before timing.
 
 The expected trend is sharper contact and broader penumbrae with greater separation or emitter size. This trend is **not yet visually verified in this revision**. Fixed sampling avoids deliberately injected frame-to-frame randomness, but sampling artifacts / motion shimmer remain possible. Sparse blocker search can miss thin occluders. Texel caps deliberately truncate the theoretical footprints, so large emitter settings and cap values affect accuracy. For a cap-sensitivity check, vary caps at a fixed emitter size and pose; do not treat capped output as a physically exact area-light shadow.
+
+## Performance and demo preparation (v0.6)
+
+Add `Runtime/ShadowLabBenchmark.cs` and update `Runtime/ShadowLabController.cs` over v0.5. No scene or shader changes are required. Enable Frame Timing Stats in Player Settings before Play. Scroll to **Record 300 GPU frames (current mode)**. The exporter records total-frame GPU timing, not isolated shadow shader time; unsupported timing does not fall back to FPS.
+
+Follow [measurement and demo instructions](Docs/BENCHMARK.md). Capture code still needs Unity compilation and host validation. The existing 10 CPU tests cover rendering geometry only, not GPU collection or file export.

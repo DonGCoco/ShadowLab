@@ -73,3 +73,11 @@ v0.5 has 10 passing CPU geometry checks, but its Unity compilation and PCSS appe
 - [ ] Inspect motion shimmer / pattern artifacts and document limitations.
 - [ ] Disable preview, freeze motion and profile GPU cost separately; no measurements yet.
 - [ ] Exercise panel scrolling on a small Game view.
+
+## v0.5 user-confirmed observations
+
+Screenshots show PCSS at 1024 and fixed sphere height 2.00 with emitter radii 0.30 / 0.60; softer edges are visible with the larger emitter. A subsequent fixed-emitter sequence used radius 0.29 and heights 0.84 / 1.52 / 2.23 / 2.80. The user explicitly confirmed that shadow edge softness increased clearly with sphere height in the running application. These are qualitative scene-specific validations, not reference-renderer error measurements or broad light-angle validation.
+
+## v0.6 capture tooling
+
+Adds FrameTimingManager collection of 300 unique positive total-GPU samples, raw CSV, condition metadata and median/P95 summary. No render algorithm changes. Capture code has not been compiled/run on the Mac; no timing values have been collected. See BENCHMARK.md. Unity GPU Usage module is not supported on macOS Metal; FrameTimingManager is the documented total-frame path.

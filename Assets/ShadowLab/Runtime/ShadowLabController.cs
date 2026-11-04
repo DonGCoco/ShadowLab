@@ -32,6 +32,7 @@ namespace ShadowLab
         RenderTexture map;
         RenderTexture depthPreview;
         Mesh previewTriangle;
+        ShadowLabBenchmark benchmark;
         MaterialPropertyBlock drawProperties;
         int submittedDraws;
         string depthStatistics = "GPU depth range: not sampled";
@@ -190,8 +191,9 @@ namespace ShadowLab
         void DrawPanel(int id)
         {
             panelScroll = GUILayout.BeginScrollView(panelScroll, GUILayout.Height(panel.height - 40));
-            GUILayout.Label("ShadowLab v0.5 | PCF + PCSS");
+            GUILayout.Label("ShadowLab v0.6 | capture tools");
             GUILayout.Label($"Shadow draw submissions: {submittedDraws} | frame {lastSubmissionFrame}");
+            GUI.enabled = !benchmark || !benchmark.Running;
             filter = (Filter)GUILayout.SelectionGrid((int)filter,
                 new[] { "Hard", "PCF 3x3", "PCF 5x5", "PCSS" }, 4);
             GUILayout.Label($"Active: {filter} | {resolution}px");
@@ -237,12 +239,27 @@ namespace ShadowLab
                 filter = Filter.PCF3x3; resolution = 1024; receiverPlaneBias = true;
             }
             GUILayout.Space(8);
-            GUI.enabled = !readbackPending && map;
+            GUI.enabled = !readbackPending && map && (!benchmark || !benchmark.Running);
             if (GUILayout.Button("Read GPU depth range")) ReadDepthRange();
             GUI.enabled = true;
             GUILayout.Label(depthStatistics);
             GUILayout.Space(8);
-            GUILayout.Label("Frame time / FPS is NOT GPU shadow timing.\nUse Unity Profiler / GPU capture.\nPCSS: initial implementation, unverified.\nMac visual validation: pending.");
+            GUILayout.Label("Frame time / FPS is NOT GPU shadow timing.\nUse Unity Profiler / GPU capture.\nPCSS trends checked in this scene.\nGPU capture tooling: pending host validation.");
+            GUI.enabled = true;
+            GUILayout.Space(8);
+            if (benchmark && benchmark.Running) {
+                if (GUILayout.Button("Cancel GPU capture")) benchmark.Cancel();
+            } else if (GUILayout.Button("Record 300 GPU frames (current mode)")) {
+                if (!benchmark) benchmark = gameObject.GetComponent<ShadowLabBenchmark>();
+                if (!benchmark) benchmark = gameObject.AddComponent<ShadowLabBenchmark>();
+                benchmark.Begin(this);
+            }
+            if (benchmark) {
+                GUILayout.Label(benchmark.Status);
+                if (!string.IsNullOrEmpty(benchmark.LastFolder) &&
+                    GUILayout.Button("Open benchmark folder"))
+                    Application.OpenURL(new System.Uri(benchmark.LastFolder).AbsoluteUri);
+            }
             GUILayout.EndScrollView();
             GUI.DragWindow(new Rect(0, 0, 390, 22));
         }
@@ -280,6 +297,7 @@ namespace ShadowLab
 
         void OnDisable()
         {
+            if (benchmark && benchmark.Running) benchmark.Cancel();
             RenderPipelineManager.beginCameraRendering -= RenderShadows;
             commands?.Release(); commands = null;
             if (previewTriangle) {
