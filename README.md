@@ -2,9 +2,9 @@
 
 An interactive shadow-quality lab in **Unity URP, C# and HLSL**: compare hard shadows, PCF and contact-hardening PCSS, then inspect the quality / GPU-time tradeoff.
 
-[![ShadowLab demo](Media/preview.jpg)](Media/ShadowLab_Demo.mp4)
+![ShadowLab animated demo — 64 seconds, loops automatically](Media/demo.gif)
 
-**[Watch / download the 64-second demo](Media/ShadowLab_Demo.mp4)** · [Implementation notes](Docs/ALGORITHMS.md) · [Measured results](Docs/RESULTS.md)
+The animation above plays automatically and loops (640×360, 8 fps). **[Download the full-quality MP4 (1280×720)](https://raw.githubusercontent.com/DonGCoco/ShadowLab/main/Media/ShadowLab_Demo.mp4)** · [Implementation notes](Docs/ALGORITHMS.md) · [Measured results](Docs/RESULTS.md)
 
 ## What it demonstrates
 
