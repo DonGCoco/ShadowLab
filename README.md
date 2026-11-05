@@ -2,9 +2,9 @@
 
 An interactive shadow-quality lab in **Unity URP, C# and HLSL**: compare hard shadows, PCF and contact-hardening PCSS, then inspect the quality / GPU-time tradeoff.
 
-![ShadowLab animated demo — 64 seconds, loops automatically](Media/demo.gif)
+![PCSS sphere-height demo — moving sphere and contact-hardening shadows](Media/sphere-height.gif)
 
-The animation above plays automatically and loops (640×360, 8 fps). **[Download the full-quality MP4 (1280×720)](https://raw.githubusercontent.com/DonGCoco/ShadowLab/main/Media/ShadowLab_Demo.mp4)** · [Implementation notes](Docs/ALGORITHMS.md) · [Measured results](Docs/RESULTS.md)
+The animation above shows changing sphere height with fixed PCSS parameters (20-second loop, 800×450, 15 fps). **[Download the full-quality MP4 (1280×720)](https://raw.githubusercontent.com/DonGCoco/ShadowLab/main/Media/ShadowLab_Demo.mp4)** · [Implementation notes](Docs/ALGORITHMS.md) · [Measured results](Docs/RESULTS.md)
 
 ## What it demonstrates
 

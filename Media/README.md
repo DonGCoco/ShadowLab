@@ -8,3 +8,5 @@ The final card reports the separate standalone Player benchmark documented in Do
 
 preview.jpg and comparison.jpg are derived from the same footage; no scene imagery was synthesized.
 
+
+The homepage preview `sphere-height.gif` uses only 26–46 seconds of the edited MP4 (the sphere-height section), at 800×450 and 15 fps, looping automatically. The full MP4 is retained.
