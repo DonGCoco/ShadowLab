@@ -1,3 +1,15 @@
+# Current validation status
+
+The record below preserves development-stage checks; pending statements under historical version headings describe that stage, not the current overall status.
+
+The author's Mac has run the demo and supplied screenshots and a recording showing Hard / PCF / PCSS, recognizable depth-preview geometry, emitter-radius changes, sphere-height changes and animated light / sphere motion. Receiver-plane correction reduced the previously visible ground stripes in the demonstrated views. This is scene-specific visual verification, not broad renderer correctness coverage.
+
+Standalone Apple M1 / Metal exports now contain 300 valid samples for every mode, with matching scene conditions and complete collection. See [measured results](RESULTS.md) and raw exports. The CPU geometry checks remain distinct from host rendering and capture validation.
+
+Remaining work includes repeated performance runs, pass-level profiling, thin-caster / cap sensitivity, extreme angles, resource lifecycle coverage and broader platform testing.
+
+---
+
 # Validation and measurement
 
 ## Current evidence
@@ -85,3 +97,4 @@ Adds FrameTimingManager collection of 300 unique positive total-GPU samples, raw
 ## First capture result and collector fix
 
 The user's screenshot reports 208/300 valid GPU samples and 21298 invalid observations within the timeout. No complete performance result is established. The collector now reads a history window and does not retire timestamps on invalid data. Partial valid samples can be exported as diagnostics with availability and completion status. Unity compilation, Editor rerun and macOS Player results after this fix remain pending. Rendering algorithms are unchanged.
+

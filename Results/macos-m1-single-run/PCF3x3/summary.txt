@@ -1,0 +1,9 @@
+FrameTimingManager total-frame GPU timing; not isolated shadows.
+Complete benchmark: True
+Valid samples: 300
+Observed unique frames: 300
+Availability: 100.00 %
+Insufficient samples or low availability: diagnostics only, do not use for performance claims.
+Median of VALID GPU samples ms: 4.560937
+P95 GPU ms: 5.892083
+Editor overhead / GPU scheduling may affect results.

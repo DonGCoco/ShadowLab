@@ -1,0 +1,26 @@
+[
+  {
+    "mode": "Hard",
+    "samples": 300,
+    "median_total_gpu_ms": 3.9233960000000003,
+    "p95_total_gpu_ms": 5.379083
+  },
+  {
+    "mode": "PCF3x3",
+    "samples": 300,
+    "median_total_gpu_ms": 4.5609375,
+    "p95_total_gpu_ms": 5.892083
+  },
+  {
+    "mode": "PCF5x5",
+    "samples": 300,
+    "median_total_gpu_ms": 5.5160625,
+    "p95_total_gpu_ms": 6.974125
+  },
+  {
+    "mode": "PCSS",
+    "samples": 300,
+    "median_total_gpu_ms": 7.8367915,
+    "p95_total_gpu_ms": 9.545
+  }
+]
