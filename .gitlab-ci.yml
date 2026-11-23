@@ -1,0 +1,4 @@
+geometry-tests:
+  image: python:3.12-slim
+  script:
+    - bash scripts/run-tests.sh
