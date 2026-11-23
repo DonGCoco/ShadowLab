@@ -68,5 +68,5 @@ Only opaque MeshRenderer geometry is supported; transform animation is supported
 
 [Algorithm notes](Docs/ALGORITHMS.md) · [Benchmark procedure](Docs/BENCHMARK.md) · [Interview preparation / 面试说明](Docs/INTERVIEW_NOTES.md) · [Roadmap](Docs/ROADMAP.md)
 
-CPU geometry checks: `python3 -m unittest discover -s Tests -v`. These checks do not compile Unity shaders or validate GPU output.
+CPU geometry checks: `bash scripts/run-tests.sh`. GitHub Actions runs this command on pushes and pull requests. The included GitLab CI configuration uses the same command when the project is hosted on GitLab. These checks do not compile Unity shaders or validate GPU output.
 
